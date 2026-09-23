@@ -1,13 +1,11 @@
-import { NextResponse } from "next/server";
-import type { AnalyzeResponse } from "@/domain/types";
+import { simulationEngine } from "@/domain";
+import { createAnalyzeHandler } from "@/server/analyze-handler";
+import { createAgentAnalysisService } from "@/server/agent";
 
 export const runtime = "nodejs";
 
-/** Placeholder until domain validation and AnalysisService are implemented. */
-export async function POST() {
-  const body: AnalyzeResponse = {
-    ok: false,
-    error: { code: "NOT_IMPLEMENTED", message: "AI-анализ будет подключён на следующем этапе разработки." },
-  };
-  return NextResponse.json(body, { status: 501 });
-}
+// Both the original scenario and agent candidates use participant 1's real engine.
+export const POST = createAnalyzeHandler({
+  engine: simulationEngine,
+  analysis: createAgentAnalysisService(simulationEngine),
+});

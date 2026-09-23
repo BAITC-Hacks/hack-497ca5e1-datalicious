@@ -89,8 +89,17 @@ export interface ValidationIssue {
 
 export interface BudgetSummary { readonly spent: number; readonly remaining: number }
 export type ValidationResult =
-  | { readonly valid: true; readonly scenario: Scenario; readonly budget: BudgetSummary }
-  | { readonly valid: false; readonly issues: readonly ValidationIssue[] };
+  | {
+      readonly valid: true;
+      readonly scenario: Scenario;
+      readonly budget: BudgetSummary;
+      readonly validationErrors: readonly [];
+    }
+  | {
+      readonly valid: false;
+      readonly issues: readonly ValidationIssue[];
+      readonly validationErrors: readonly ValidationIssue[];
+    };
 
 export interface DistrictScore {
   readonly districtId: DistrictId;
@@ -112,6 +121,23 @@ export interface ScoreSnapshot {
   readonly score: number;
 }
 
+export interface DecisionContribution {
+  readonly measureId: MeasureId;
+  readonly direction: Direction;
+  readonly cost: number;
+  readonly lagQuarters: number;
+  readonly realizedFraction: number;
+  readonly districtIds: readonly DistrictId[];
+  readonly fullEffects: IndicatorEffects;
+  readonly realizedEffects: IndicatorEffects;
+}
+
+export interface FiredSynergy {
+  readonly pair: readonly [MeasureId, MeasureId];
+  readonly districtId: DistrictId;
+  readonly effects: IndicatorEffects;
+}
+
 /** Realized indicator effects before clipping; not additive contributions to final Score. */
 export interface EffectContribution {
   readonly source: { readonly kind: "measure"; readonly measureId: MeasureId }
@@ -127,21 +153,36 @@ export interface DistrictDelta {
 }
 
 export interface SimulationResult {
+  readonly valid: true;
+  readonly validationErrors: readonly [];
   readonly datasetVersion: string;
   readonly scenario: Scenario;
   readonly budget: BudgetSummary;
+  readonly totalCost: number;
+  readonly remainingBudget: number;
+  readonly baselineScore: number;
+  readonly finalScore: number;
+  readonly indicatorsBefore: readonly DistrictScore[];
+  readonly indicatorsAfter: readonly DistrictScore[];
   readonly baseline: ScoreSnapshot;
   readonly after: ScoreSnapshot;
   readonly scoreDelta: number;
   readonly districtDeltas: readonly DistrictDelta[];
+  readonly decisionContributions: readonly DecisionContribution[];
+  readonly synergies: readonly FiredSynergy[];
   readonly contributions: readonly EffectContribution[];
 }
 
 export type EvaluationResult =
   | { readonly ok: true; readonly result: SimulationResult }
-  | { readonly ok: false; readonly issues: readonly ValidationIssue[] };
+  | {
+      readonly ok: false;
+      readonly valid: false;
+      readonly issues: readonly ValidationIssue[];
+      readonly validationErrors: readonly ValidationIssue[];
+    };
 
-/** Future pure domain implementation. Invalid input must never produce a score. */
+/** Pure deterministic domain engine. Invalid input must never produce a score. */
 export interface SimulationEngine {
   validate(input: unknown): ValidationResult;
   evaluate(input: unknown): EvaluationResult;
@@ -161,7 +202,12 @@ export interface AnalysisService {
   analyze(result: SimulationResult): Promise<AiAnalysis>;
 }
 
-export interface AnalyzeRequest { readonly scenario: Scenario }
+/** Explicit local mode never calls OpenAI; omitted mode preserves agent behavior. */
+export type AnalysisMode = "agent" | "local";
+export interface AnalyzeRequest {
+  readonly scenario: Scenario;
+  readonly mode?: AnalysisMode;
+}
 export type ApiErrorCode = "NOT_IMPLEMENTED" | "INVALID_REQUEST" | "INVALID_SCENARIO"
   | "AI_NOT_CONFIGURED" | "AI_UNAVAILABLE" | "INTERNAL_ERROR";
 
@@ -172,5 +218,5 @@ export interface ApiError {
 }
 
 export type AnalyzeResponse =
-  | { readonly ok: true; readonly result: SimulationResult; readonly analysis: AiAnalysis }
+  | { readonly ok: true; readonly result: SimulationResult; readonly analysis: AiAnalysis; readonly source: AnalysisMode }
   | { readonly ok: false; readonly error: ApiError };
