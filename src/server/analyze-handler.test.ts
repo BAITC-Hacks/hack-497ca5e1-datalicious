@@ -6,7 +6,7 @@ vi.mock("server-only", () => ({}));
 import type { AnalysisService, SimulationEngine, ValidationCode } from "@/domain/types";
 import { createAnalyzeHandler } from "./analyze-handler";
 import { AnalysisError } from "./analysis-error";
-import { analysisFixture, createResultFixture, deepFreeze } from "./__tests__/fixtures";
+import { analysisFixture, createResultFixture, deepFreeze, invalidEvaluation } from "./__tests__/fixtures";
 
 const evaluate = vi.fn<SimulationEngine["evaluate"]>();
 const analyze = vi.fn<AnalysisService["analyze"]>();
@@ -57,7 +57,7 @@ describe("HTTP orchestration contract (domain and analysis doubles, not real eng
 
   it("delegates scenario shape and unknown fields to the domain, mapping INVALID_SHAPE to 400", async () => {
     const input = { decisions: [], finalScore: 100 };
-    evaluate.mockReturnValue({ ok: false, issues: [{ code: "INVALID_SHAPE", message: "Лишнее поле." }] });
+    evaluate.mockReturnValue(invalidEvaluation([{ code: "INVALID_SHAPE", message: "Лишнее поле." }]));
     const response = await handle(request({ scenario: input }));
     expect(evaluate).toHaveBeenCalledWith(input);
     expect(response.status).toBe(400);
@@ -70,7 +70,7 @@ describe("HTTP orchestration contract (domain and analysis doubles, not real eng
     "UNKNOWN_MEASURE", "DISTRICT_REQUIRED", "DISTRICT_FORBIDDEN", "DIRECTION_LIMIT", "INCOMPATIBLE_MEASURES",
   ])("forwards domain issue %s as 422 without any score or AI call", async code => {
     const issues = [{ code, message: "Ошибка сценария.", decisionIndexes: [0] }];
-    evaluate.mockReturnValue({ ok: false, issues });
+    evaluate.mockReturnValue(invalidEvaluation(issues));
     const response = await handle(request({ scenario: scenario() }));
     expect(response.status).toBe(422);
     const body = await response.json();

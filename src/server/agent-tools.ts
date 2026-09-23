@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { zodResponsesFunction } from "openai/helpers/zod";
 import { dataset } from "@/data/dataset";
-import type { Scenario, SimulationEngine, SimulationResult, ValidationIssue } from "@/domain/types";
+import type { BudgetSummary, Scenario, SimulationEngine, SimulationResult, ValidationIssue } from "@/domain/types";
 
 const emptyArguments = z.strictObject({});
 // Transport schema only. null means districtId is omitted before domain validation.
@@ -27,8 +27,18 @@ export interface AgentJournalEntry {
   readonly scenario?: unknown;
   readonly scenarioId?: string;
   readonly score?: number;
+  readonly budget?: BudgetSummary;
   readonly issues?: readonly ValidationIssue[];
   readonly error?: string;
+  readonly comparison?: {
+    readonly leftId: string;
+    readonly rightId: string;
+    readonly leftScore: number;
+    readonly rightScore: number;
+    readonly scoreDifference: number;
+    readonly costDifference: number;
+    readonly bestScenarioId: string;
+  };
 }
 
 type ToolReply = Record<string, unknown>;
@@ -95,13 +105,20 @@ export class AgentToolSession {
       const left = this.checked.get(parsed.data.leftId);
       const right = this.checked.get(parsed.data.rightId);
       if (!left || !right) return fail("UNVERIFIED_SCENARIO");
-      this.journal.push({ tool: name, callId, status: "compared" });
-      return {
-        ok: true, left: snapshot(parsed.data.leftId, left), right: snapshot(parsed.data.rightId, right),
+      const comparison = {
+        leftId: parsed.data.leftId, rightId: parsed.data.rightId,
+        leftScore: left.after.score, rightScore: right.after.score,
         scoreDifference: right.after.score - left.after.score,
         costDifference: right.budget.spent - left.budget.spent,
         bestScenarioId: this.best().id,
       };
+      this.journal.push({ tool: name, callId, status: "compared", comparison });
+      return structuredClone({
+        ok: true, left: snapshot(parsed.data.leftId, left), right: snapshot(parsed.data.rightId, right),
+        scoreDifference: comparison.scoreDifference,
+        costDifference: comparison.costDifference,
+        bestScenarioId: comparison.bestScenarioId,
+      });
     }
 
     const parsed = candidateArguments.safeParse(args);
@@ -114,6 +131,8 @@ export class AgentToolSession {
       this.journal.push({ tool: name, callId, status: "cached", scenario: structuredClone(candidate),
         ...(typeof cached.scenarioId === "string" ? { scenarioId: cached.scenarioId } : {}),
         ...(typeof cached.score === "number" ? { score: cached.score } : {}),
+        ...(cached.budget ? { budget: structuredClone(cached.budget as BudgetSummary) } : {}),
+        ...(cached.issues ? { issues: structuredClone(cached.issues as readonly ValidationIssue[]) } : {}),
       });
       return structuredClone({ ...cached, cached: true });
     }
@@ -131,7 +150,8 @@ export class AgentToolSession {
     this.checked.set(id, result);
     const reply = { ok: true, ...snapshot(id, result) };
     this.cache.set(key, reply);
-    this.journal.push({ tool: name, callId, status: "evaluated", scenario: result.scenario, scenarioId: id, score: result.after.score });
+    this.journal.push({ tool: name, callId, status: "evaluated", scenario: structuredClone(result.scenario),
+      scenarioId: id, score: result.after.score, budget: structuredClone(result.budget) });
     return structuredClone(reply);
   }
 }

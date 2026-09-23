@@ -7,7 +7,7 @@ import type { SimulationEngine } from "@/domain/types";
 import { createAgentAnalysisService, runScenarioAgent } from "./agent";
 import { toAgentScenario } from "./agent-tools";
 import { createAnalyzeHandler } from "./analyze-handler";
-import { createResultFixture } from "./__tests__/fixtures";
+import { createResultFixture, invalidEvaluation } from "./__tests__/fixtures";
 
 const fetchMock = vi.fn<typeof fetch>();
 const evaluate = vi.fn<SimulationEngine["evaluate"]>();
@@ -89,7 +89,7 @@ describe("agent with installed SDK and fully mocked HTTP; no live domain or paid
   });
 
   it("rejects the original scenario before any OpenAI request", async () => {
-    evaluate.mockReturnValue({ ok: false, issues: [{ code: "BUDGET_EXCEEDED", message: "Бюджет превышен." }] });
+    evaluate.mockReturnValue(invalidEvaluation([{ code: "BUDGET_EXCEEDED", message: "Бюджет превышен." }]));
     const response = await handler(request());
     expect(response.status).toBe(422);
     expect(fetchMock).not.toHaveBeenCalled();

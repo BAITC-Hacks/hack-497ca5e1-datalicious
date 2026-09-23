@@ -1,18 +1,11 @@
-import { NextResponse } from "next/server";
-import type { AnalyzeResponse } from "@/domain/types";
+import { simulationEngine } from "@/domain";
+import { createAnalyzeHandler } from "@/server/analyze-handler";
+import { createAgentAnalysisService } from "@/server/agent";
 
 export const runtime = "nodejs";
 
-/**
- * The real SimulationEngine is not present in this branch. Do not wire a test double here.
- * Once available, compose createAnalyzeHandler({ engine, analysis: createAgentAnalysisService(engine) })
- * from src/server/analyze-handler.ts and src/server/agent.ts.
- * See docs/AI_INTEGRATION.md for the integration boundary and error contract.
- */
-export async function POST() {
-  const body: AnalyzeResponse = {
-    ok: false,
-    error: { code: "NOT_IMPLEMENTED", message: "AI-анализ будет подключён на следующем этапе разработки." },
-  };
-  return NextResponse.json(body, { status: 501 });
-}
+// Both the original scenario and agent candidates use participant 1's real engine.
+export const POST = createAnalyzeHandler({
+  engine: simulationEngine,
+  analysis: createAgentAnalysisService(simulationEngine),
+});

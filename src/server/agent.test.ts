@@ -9,9 +9,11 @@ import { createOpenAIContext } from "./openai";
 import { AGENT_LIMITS, createAgentAnalysisService, runScenarioAgent } from "./agent";
 import { toAgentScenario } from "./agent-tools";
 import { createAnalyzeHandler } from "./analyze-handler";
-import { createResultFixture, deepFreeze } from "./__tests__/fixtures";
+import type { AgentBudgetPolicy } from "./agent-budget";
+import { createResultFixture, deepFreeze, invalidEvaluation } from "./__tests__/fixtures";
 
 const create = vi.fn();
+const countInput = vi.fn();
 const evaluate = vi.fn<SimulationEngine["evaluate"]>();
 const engine: SimulationEngine = { evaluate, validate: vi.fn(), baseline: vi.fn() };
 
@@ -46,10 +48,96 @@ function received(callIndex: number, callId: string) {
 }
 
 beforeEach(() => {
-  create.mockReset(); evaluate.mockReset();
+  create.mockReset(); evaluate.mockReset(); countInput.mockReset().mockResolvedValue({ input_tokens: 1_000 });
   vi.mocked(createOpenAIContext).mockReset().mockReturnValue({
-    client: { responses: { create }, timeout: 20_000 } as unknown as ReturnType<typeof createOpenAIContext>["client"],
+    client: { responses: { create, inputTokens: { count: countInput } }, timeout: 20_000,
+      baseURL: "https://api.openai.com/v1" } as unknown as ReturnType<typeof createOpenAIContext>["client"],
     model: "test-model",
+  });
+});
+
+// Artificial prices solely for spending-guard tests; never used by a live run.
+const testBudget = (maxUsd = 1): AgentBudgetPolicy => ({ maxUsd, maxInputTokens: 1_000,
+  pricing: { model: "test-model", inputUsdPerMillion: 10, outputUsdPerMillion: 20,
+    source: "https://developers.openai.com/api/docs/pricing", verifiedAt: new Date().toISOString() } });
+
+describe("agent request and cost guards (all provider calls mocked)", () => {
+  it("reserves worst-case cost before every request and blocks the second when budget is insufficient", async () => {
+    create.mockResolvedValueOnce(tool("get_city_context", {}, "catalog"));
+    await expect(runScenarioAgent(createResultFixture(), engine, { budget: testBudget(0.06) })).rejects.toMatchObject({
+      reason: "BUDGET_LIMIT", usage: { modelRequests: 1, tokenCountRequests: 2 },
+      budget: { reservedUsd: 0.05, remainingUsd: 0.01, estimatedUsd: 0.0014 },
+    });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(countInput).toHaveBeenCalledTimes(2);
+    expect(countInput.mock.calls[1]?.[0].input).toContainEqual(expect.objectContaining({ type: "function_call_output", call_id: "catalog" }));
+    expect(countInput.mock.calls[0]?.[0]).toMatchObject({ model: "test-model", tools: expect.any(Array),
+      text: expect.any(Object), instructions: expect.any(String), truncation: "disabled" });
+    expect(countInput.mock.calls[0]?.[1]).toMatchObject({ maxRetries: 0 });
+    expect(create.mock.calls[0]?.[0].service_tier).toBe("default");
+  });
+
+  it("stops before generation when the exact input count exceeds the permitted cap", async () => {
+    countInput.mockResolvedValue({ input_tokens: 1_001 });
+    await expect(runScenarioAgent(createResultFixture(), engine, { budget: testBudget() })).rejects.toMatchObject({
+      reason: "INPUT_TOKEN_LIMIT", usage: { modelRequests: 0 },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("does not dispatch an oversized initial context or send it to the counter", async () => {
+    const original = { ...createResultFixture(), datasetVersion: "я".repeat(AGENT_LIMITS.contextBytes) };
+    await expect(runScenarioAgent(original, engine, { budget: testBudget() })).rejects.toMatchObject({ reason: "CONTEXT_LIMIT" });
+    expect(create).not.toHaveBeenCalled(); expect(countInput).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized response before executing its tools", async () => {
+    create.mockResolvedValueOnce({ ...tool("get_city_context", {}, "catalog"), output: [
+      { type: "reasoning", id: "reasoning", summary: [], encrypted_content: "x".repeat(AGENT_LIMITS.responseBytes) },
+      call("get_city_context", {}, "catalog"),
+    ] });
+    await expect(runScenarioAgent(createResultFixture(), engine)).rejects.toMatchObject({
+      reason: "RESPONSE_LIMIT", usage: { modelRequests: 1, toolCalls: 0 },
+    });
+  });
+
+  it("cannot send the application key to an unapproved SDK endpoint", async () => {
+    vi.mocked(createOpenAIContext).mockReturnValue({ model: "test-model", client: {
+      baseURL: "https://unapproved.invalid/v1", responses: { create, inputTokens: { count: countInput } }, timeout: 20_000,
+    } as unknown as ReturnType<typeof createOpenAIContext>["client"] });
+    await expect(runScenarioAgent(createResultFixture(), engine, { budget: testBudget() })).rejects.toMatchObject({ reason: "ENDPOINT_NOT_APPROVED" });
+    expect(create).not.toHaveBeenCalled(); expect(countInput).not.toHaveBeenCalled();
+  });
+
+  it("retains its reservation and reports unknown cost on network failure without retrying", async () => {
+    create.mockRejectedValue(new Error("private provider error"));
+    await expect(runScenarioAgent(createResultFixture(), engine, { budget: testBudget() })).rejects.toMatchObject({
+      reason: "PROVIDER_ERROR", usage: { modelRequests: 1, complete: false }, budget: { reservedUsd: 0.05, estimatedUsd: null },
+    });
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not continue a paid run after an answer without usage", async () => {
+    create.mockResolvedValueOnce({ ...tool("get_city_context", {}, "catalog"), usage: null });
+    await expect(runScenarioAgent(createResultFixture(), engine, { budget: testBudget() })).rejects.toMatchObject({
+      reason: "USAGE_UNKNOWN", usage: { complete: false }, budget: { reservedUsd: 0.05, estimatedUsd: null },
+    });
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks inconsistent usage incomplete instead of summing false token totals", async () => {
+    create.mockResolvedValueOnce({ ...tool("get_city_context", {}, "catalog"), usage: { ...tokens, total_tokens: 999 } });
+    await expect(runScenarioAgent(createResultFixture(), engine, { budget: testBudget() })).rejects.toMatchObject({
+      reason: "USAGE_LIMIT_MISMATCH", usage: { complete: false, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      budget: { estimatedUsd: null },
+    });
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires prices for the exact configured model before any network operation", async () => {
+    const policy = testBudget(); policy.pricing.model = "another-model";
+    await expect(runScenarioAgent(createResultFixture(), engine, { budget: policy })).rejects.toMatchObject({ reason: "MODEL_PRICE_MISMATCH" });
+    expect(create).not.toHaveBeenCalled(); expect(countInput).not.toHaveBeenCalled();
   });
 });
 afterEach(() => vi.useRealTimers());
@@ -100,7 +188,7 @@ describe("agent loop (scripted model and domain doubles; no paid calls)", () => 
   });
 
   it("returns domain rejection without Score, then lets the model correct the proposal", async () => {
-    evaluate.mockReturnValueOnce({ ok: false, issues: [{ code: "DECISION_COUNT", message: "Нужно пять решений." }] })
+    evaluate.mockReturnValueOnce(invalidEvaluation([{ code: "DECISION_COUNT", message: "Нужно пять решений." }]))
       .mockReturnValueOnce({ ok: true, result: first() });
     create.mockResolvedValueOnce(tool("evaluate_scenario", { scenario: { decisions: [] } }, "invalid"));
     create.mockImplementationOnce(async () => {
@@ -138,7 +226,7 @@ describe("agent loop (scripted model and domain doubles; no paid calls)", () => 
   });
 
   it("caches invalid candidates too and never attaches a Score to them", async () => {
-    evaluate.mockReturnValue({ ok: false, issues: [{ code: "UNKNOWN_MEASURE", message: "Неизвестная мера." }] });
+    evaluate.mockReturnValue(invalidEvaluation([{ code: "UNKNOWN_MEASURE", message: "Неизвестная мера." }]));
     const invalid = { decisions: [{ measureId: "unknown", districtId: null }] };
     create.mockResolvedValueOnce(tool("evaluate_scenario", { scenario: invalid }, "invalid"))
       .mockResolvedValueOnce(tool("evaluate_scenario", { scenario: invalid }, "duplicate"))
