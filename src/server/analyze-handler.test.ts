@@ -32,7 +32,7 @@ describe("HTTP orchestration contract (domain and analysis doubles, not real eng
     const response = await handle(request({ scenario: input }));
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(await response.json()).toEqual({ ok: true, result: createResultFixture(), analysis: analysisFixture });
+    expect(await response.json()).toEqual({ ok: true, result: createResultFixture(), analysis: analysisFixture, source: "agent" });
     expect(evaluate).toHaveBeenCalledExactlyOnceWith(input);
     expect(analyze).toHaveBeenCalledExactlyOnceWith(createResultFixture());
     expect(evaluate.mock.invocationCallOrder[0]).toBeLessThan(analyze.mock.invocationCallOrder[0]!);
@@ -45,6 +45,41 @@ describe("HTTP orchestration contract (domain and analysis doubles, not real eng
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     expect(evaluate).not.toHaveBeenCalled();
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("returns a labeled local explanation from recalculated facts without calling the AI dependency", async () => {
+    analyze.mockRejectedValue(new Error("AI must not be invoked in local mode"));
+    const response = await handle(request({ scenario: scenario(), mode: "local" }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, source: "local", result: createResultFixture() });
+    expect(body.analysis.summary).toContain("Резервное объяснение без LLM");
+    expect(evaluate).toHaveBeenCalledExactlyOnceWith(scenario());
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it.each(["fallback", "LOCAL", "", null, 1])("rejects unsupported mode %j without evaluation", async mode => {
+    expect((await handle(request({ scenario: scenario(), mode }))).status).toBe(400);
+    expect(evaluate).not.toHaveBeenCalled(); expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("does not hide engine errors behind a local explanation", async () => {
+    evaluate.mockImplementation(() => { throw new Error("private engine trace"); });
+    const response = await handle(request({ scenario: scenario(), mode: "local" }));
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ ok: false, error: {
+      code: "INTERNAL_ERROR", message: "Не удалось обработать сценарий. Попробуйте повторить запрос.",
+    } });
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("does not explain an invalid scenario in local mode", async () => {
+    evaluate.mockReturnValue(invalidEvaluation([{ code: "BUDGET_EXCEEDED", message: "Слишком дорого." }]));
+    const response = await handle(request({ scenario: scenario(), mode: "local" }));
+    expect(response.status).toBe(422);
+    const body = await response.json();
+    expect(body).not.toHaveProperty("analysis"); expect(body).not.toHaveProperty("result");
     expect(analyze).not.toHaveBeenCalled();
   });
 

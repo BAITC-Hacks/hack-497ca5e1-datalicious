@@ -202,7 +202,12 @@ export interface AnalysisService {
   analyze(result: SimulationResult): Promise<AiAnalysis>;
 }
 
-export interface AnalyzeRequest { readonly scenario: Scenario }
+/** Explicit local mode never calls OpenAI; omitted mode preserves agent behavior. */
+export type AnalysisMode = "agent" | "local";
+export interface AnalyzeRequest {
+  readonly scenario: Scenario;
+  readonly mode?: AnalysisMode;
+}
 export type ApiErrorCode = "NOT_IMPLEMENTED" | "INVALID_REQUEST" | "INVALID_SCENARIO"
   | "AI_NOT_CONFIGURED" | "AI_UNAVAILABLE" | "INTERNAL_ERROR";
 
@@ -213,5 +218,5 @@ export interface ApiError {
 }
 
 export type AnalyzeResponse =
-  | { readonly ok: true; readonly result: SimulationResult; readonly analysis: AiAnalysis }
+  | { readonly ok: true; readonly result: SimulationResult; readonly analysis: AiAnalysis; readonly source: AnalysisMode }
   | { readonly ok: false; readonly error: ApiError };

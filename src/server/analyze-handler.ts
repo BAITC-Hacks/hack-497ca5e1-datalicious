@@ -3,10 +3,12 @@ import { z } from "zod";
 import type { AnalysisService, AnalyzeResponse, ApiError, SimulationEngine } from "@/domain/types";
 import { AnalysisError } from "./analysis-error";
 import { aiAnalysisSchema } from "./analysis-schema";
+import { createFallbackAnalysis } from "./fallback";
 
 // Only the HTTP envelope belongs here. Scenario shape and rules belong to the domain.
 const requestEnvelope = z.strictObject({
   scenario: z.unknown().refine(value => value !== undefined, "scenario is required"),
+  mode: z.enum(["agent", "local"]).default("agent"),
 });
 
 function failure(status: number, error: ApiError): Response {
@@ -16,7 +18,7 @@ function failure(status: number, error: ApiError): Response {
   });
 }
 
-/** Wire this factory to the real engine when participant 1 publishes its exports. */
+/** Both modes recalculate server facts; local analysis never touches the AI adapter. */
 export function createAnalyzeHandler(dependencies: {
   engine: SimulationEngine;
   analysis: AnalysisService;
@@ -31,7 +33,7 @@ export function createAnalyzeHandler(dependencies: {
 
     const envelope = requestEnvelope.safeParse(body);
     if (!envelope.success) {
-      return failure(400, { code: "INVALID_REQUEST", message: "Ожидается объект с единственным полем scenario." });
+      return failure(400, { code: "INVALID_REQUEST", message: "Ожидаются scenario и необязательный mode: agent или local." });
     }
 
     try {
@@ -47,9 +49,12 @@ export function createAnalyzeHandler(dependencies: {
 
       // Isolate trusted facts from accidental mutation by an analysis adapter.
       const result = evaluation.result;
+      const source = envelope.data.mode;
       let analysis;
       try {
-        analysis = aiAnalysisSchema.safeParse(await dependencies.analysis.analyze(structuredClone(result)));
+        analysis = aiAnalysisSchema.safeParse(source === "local"
+          ? createFallbackAnalysis(structuredClone(result))
+          : await dependencies.analysis.analyze(structuredClone(result)));
       } catch (error) {
         if (error instanceof AnalysisError) {
           return failure(error.code === "AI_NOT_CONFIGURED" ? 503 : 502, {
@@ -59,11 +64,12 @@ export function createAnalyzeHandler(dependencies: {
         throw error;
       }
       if (!analysis.success) {
+        if (source === "local") throw new Error("Invalid local analysis result");
         const error = new AnalysisError("AI_UNAVAILABLE");
         return failure(502, { code: error.code, message: error.message });
       }
 
-      return Response.json({ ok: true, result, analysis: analysis.data } satisfies AnalyzeResponse, {
+      return Response.json({ ok: true, result, analysis: analysis.data, source } satisfies AnalyzeResponse, {
         headers: { "Cache-Control": "no-store" },
       });
     } catch {

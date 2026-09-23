@@ -9,8 +9,8 @@ import { exampleDecisions } from "@/data/dataset";
 import { toAgentScenario } from "@/server/agent-tools";
 
 const fetchMock = vi.fn<typeof fetch>();
-const request = (scenario: unknown) => new Request("http://localhost/api/analyze", {
-  method: "POST", body: JSON.stringify({ scenario }),
+const request = (scenario: unknown, mode?: "agent" | "local") => new Request("http://localhost/api/analyze", {
+  method: "POST", body: JSON.stringify({ scenario, mode }),
 });
 
 beforeEach(() => {
@@ -21,6 +21,27 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("production route with real engine; no live provider", () => {
+  it.each([false, true])("serves real local explanation without provider access (configured=%s)", async configured => {
+    if (configured) {
+      vi.stubEnv("OPENAI_API_KEY", "test-only-not-a-real-key");
+      vi.stubEnv("OPENAI_MODEL", "test-model");
+    }
+    const scenario = { decisions: exampleDecisions };
+    const evaluated = simulationEngine.evaluate(scenario);
+    if (!evaluated.ok) throw new Error("Organizer scenario must be valid");
+    const response = await POST(request(scenario, "local"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const payload = await response.json();
+    expect(payload).toMatchObject({ ok: true, source: "local", result: evaluated.result });
+    expect(payload.result.totalCost).toBe(95);
+    expect(payload.result.finalScore).toBeCloseTo(56.54307, 5);
+    expect(payload.analysis.summary).toEqual(expect.any(String));
+    expect(payload.analysis.summary.length).toBeGreaterThan(0);
+    expect(payload.analysis.risks).toEqual(expect.any(Array));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("returns 503 for a valid scenario without configuration, not 501 or fake success", async () => {
     const response = await POST(request({ decisions: exampleDecisions }));
     expect(response.status).toBe(503);
@@ -35,11 +56,25 @@ describe("production route with real engine; no live provider", () => {
       { measureId: "M7", districtId: "esil" }, { measureId: "M8", districtId: "nura" }, { measureId: "M12" },
     ] }, "BUDGET_EXCEEDED"],
   ])("rejects a genuinely invalid scenario before OpenAI (%s)", async (scenario, code) => {
-    const response = await POST(request(scenario));
-    expect(response.status).toBe(422);
-    const payload = await response.json();
-    expect(payload.error.issues).toContainEqual(expect.objectContaining({ code }));
-    expect(payload).not.toHaveProperty("result");
+    for (const mode of ["agent", "local"] as const) {
+      const response = await POST(request(scenario, mode));
+      expect(response.status).toBe(422);
+      const payload = await response.json();
+      expect(payload.error.issues).toContainEqual(expect.objectContaining({ code }));
+      expect(payload).not.toHaveProperty("result");
+      expect(payload).not.toHaveProperty("analysis");
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects client-supplied Score and cost instead of trusting them", async () => {
+    const response = await POST(new Request("http://localhost/api/analyze", {
+      method: "POST", body: JSON.stringify({
+        scenario: { decisions: exampleDecisions }, mode: "local", totalCost: 0, finalScore: 100,
+      }),
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -66,6 +101,7 @@ describe("production route with real engine; no live provider", () => {
     const response = await POST(request({ decisions: exampleDecisions }));
     expect(response.status).toBe(200);
     const payload = await response.json();
+    expect(payload.source).toBe("agent");
     expect(payload.result).toEqual(original.result);
     expect(payload.result.budget.spent).toBe(95);
     expect(payload.result.baseline.score).toBeCloseTo(52.55768, 5);

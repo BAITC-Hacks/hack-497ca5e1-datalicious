@@ -64,7 +64,7 @@ describe("existing OpenAI factory and real SDK with mocked HTTP transport", () =
 
     const response = await handle(request());
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, result: createResultFixture(), analysis: analysisFixture });
+    expect(await response.json()).toEqual({ ok: true, result: createResultFixture(), analysis: analysisFixture, source: "agent" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const call = fetchMock.mock.calls[0];
     expect(call).toBeDefined();
