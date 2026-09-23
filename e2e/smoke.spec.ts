@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("3D district selection, construction and saved plans work on desktop and mobile", async ({
   page,
 }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -12,13 +12,14 @@ test("3D district selection, construction and saved plans work on desktop and mo
     "ready",
     { timeout: 20000 },
   );
+  await page.screenshot({ path: "artifacts/astana-overview.png" });
   // Hit the actual canvas, not just the accessible DOM labels: the robot's
   // target must come from the scene raycaster for every district.
   for (const [id, name] of [
     ["esil", "Есиль"],
     ["almaty", "Алматы"],
     ["saryarka", "Сарыарка"],
-    ["baikonur", "Байконур"],
+    ["baikonur", "Байконыр"],
     ["nura", "Нура"],
   ]) {
     const label = page.getByRole("button", {
@@ -28,6 +29,10 @@ test("3D district selection, construction and saved plans work on desktop and mo
     const bounds = (await label.boundingBox())!;
     let hit = false;
     for (const [dx, dy] of [
+      [0, 24],
+      [0, -24],
+      [48, 0],
+      [-48, 0],
       [0, 38],
       [35, 42],
       [-35, 42],
@@ -88,9 +93,17 @@ test("3D district selection, construction and saved plans work on desktop and mo
   await page
     .getByRole("button", { name: "Запустить план", exact: false })
     .click();
-  await expect(page.getByRole("dialog", { name: "Работы идут" })).toBeVisible();
   await expect(
-    page.getByText("ПЛАН ВИЗУАЛИЗИРОВАН", { exact: true }),
+    page.getByRole("region", { name: "Демонстрация плана" }),
+  ).toBeVisible();
+  await expect(page.locator(".map-canvas")).toHaveAttribute(
+    "data-active-stage",
+    "2",
+    { timeout: 4000 },
+  );
+  await page.screenshot({ path: "artifacts/astana-plan.png" });
+  await expect(
+    page.getByText("Демонстрация завершена", { exact: true }),
   ).toBeVisible({ timeout: 13000 });
   await page.getByRole("button", { name: /Вернуться к городу/ }).click();
   await page.reload();
@@ -136,6 +149,7 @@ test("touch selection and keyboard fallback work with reduced motion", async ({
     "data-renderer",
     "ready",
   );
+  await page.screenshot({ path: "artifacts/astana-mobile.png" });
   await page
     .getByRole("button", { name: "Выбрать район Нура", exact: true })
     .tap();

@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { dataset } from "@/data/dataset";
-import type { DistrictId, Scenario } from "@/domain/types";
+import type { Scenario } from "@/domain/types";
 import { baselineFixture } from "../simulator/baseline-fixture";
 import {
   readSavedDraft,
@@ -11,13 +11,14 @@ import {
 } from "../simulator/selection-adapter";
 import { formatNumber, formatEffects } from "../simulator/presentation";
 import { CityMap } from "./city-map";
+import { geography, type MapDistrictId } from "./geography";
 import { DistrictPanel } from "./district-panel";
 import { Construction } from "./construction";
 
 const storageKey = `akim-scenario:${dataset.version}`;
 
 export function CityStudio() {
-  const [target, setTarget] = useState<DistrictId | "city" | null>(null);
+  const [target, setTarget] = useState<MapDistrictId | "city" | null>(null);
   const [scenario, setScenario] = useState<Scenario>({ decisions: [] });
   const [notice, setNotice] = useState("");
   const [rules, setRules] = useState(false);
@@ -29,7 +30,12 @@ export function CityStudio() {
   const launchButton = useRef<HTMLButtonElement>(null);
   const spent = selectionCost(scenario.decisions);
   const validation = selectionAdapter.validate(scenario);
-  const selectDistrict = useCallback((id: DistrictId) => setTarget(id), []);
+  const selectDistrict = useCallback(
+    (id: MapDistrictId) => {
+      if (phase !== "running") setTarget(id);
+    },
+    [phase],
+  );
   const finish = useCallback(() => {
     setProgress(1);
     setPhase("complete");
@@ -38,6 +44,7 @@ export function CityStudio() {
     s.pair.every((id) => scenario.decisions.some((d) => d.measureId === id)),
   );
   function change(next: Scenario) {
+    if (phase === "running") return;
     setScenario(next);
     setPhase("planning");
     setProgress(0);
@@ -72,7 +79,7 @@ export function CityStudio() {
     }
   }
   function launch() {
-    if (!validation.valid) return;
+    if (!validation.valid || phase === "running") return;
     setTarget(null);
     setPlanOpen(false);
     setRules(false);
@@ -84,15 +91,12 @@ export function CityStudio() {
     requestAnimationFrame(() => launchButton.current?.focus());
   }
   return (
-    <div className={`city-studio ${target ? "has-panel" : ""}`}>
-      <div
-        className="studio-content"
-        inert={phase === "running" || phase === "complete"}
-      >
+    <div className={`city-studio ${target ? "has-panel" : ""} phase-${phase}`}>
+      <div className="studio-content">
         <a href="#district-picker" className="skip-link">
           Перейти к выбору района
         </a>
-        <header className="studio-header">
+        <header className="studio-header" inert={phase === "running"}>
           <a
             href="#district-picker"
             className="studio-brand"
@@ -121,9 +125,9 @@ export function CityStudio() {
         <main className="studio-main">
           <div className="map-workspace">
             <div className="map-intro">
-              <p>МОДЕЛЬ ГОРОДА</p>
+              <p>ИНТЕРАКТИВНЫЙ МАКЕТ</p>
               <h2>Астана</h2>
-              <span>Нажмите на район, чтобы начать.</span>
+              <span>Выберите район</span>
             </div>
             <div className="map-budget">
               <span>Осталось</span>
@@ -144,13 +148,14 @@ export function CityStudio() {
               progress={progress}
             />
             <div
+              inert={phase === "running"}
               className="district-picker"
               id="district-picker"
               tabIndex={-1}
               role="group"
               aria-label="Районы и общегородские меры"
             >
-              {dataset.districts.map((d) => (
+              {geography.districts.map((d) => (
                 <button
                   key={d.id}
                   aria-pressed={target === d.id}
@@ -178,7 +183,7 @@ export function CityStudio() {
             />
           )}
         </main>
-        <footer className="plan-dock">
+        <footer className="plan-dock" inert={phase === "running"}>
           <div className="plan-dock-heading">
             <button
               onClick={() => setPlanOpen((v) => !v)}
@@ -244,7 +249,7 @@ export function CityStudio() {
             </button>
             <small>
               {validation.valid
-                ? "Пять решений. Посмотрим, как изменится город."
+                ? "Демонстрация · 10 секунд"
                 : `Выберите ещё ${5 - scenario.decisions.length} меропр.`}
             </small>
           </div>
@@ -384,25 +389,13 @@ export function CityStudio() {
         <div className="construction-overlay">
           <section
             className="completion-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="completion-title"
+            role="status"
+            aria-label="Демонстрация завершена"
           >
-            <span className="completion-check">✓</span>
-            <p>ПЛАН ВИЗУАЛИЗИРОВАН</p>
-            <h2 id="completion-title">
-              Пять решений.
-              <br />
-              Новый вид города.
-            </h2>
-            <span>
-              На карте появились выбранные объекты. Потрачено {spent} из 100
-              единиц.
-            </span>
-            <p className="completion-note">
-              Это визуализация работ. Оценку последствий и AI-анализ подключим
-              на следующем этапе.
-            </p>
+            <div>
+              <strong>Демонстрация завершена</strong>
+              <p>План: {spent} / 100. Реальные работы не запускались.</p>
+            </div>
             <button autoFocus onClick={closeComplete}>
               Вернуться к городу →
             </button>

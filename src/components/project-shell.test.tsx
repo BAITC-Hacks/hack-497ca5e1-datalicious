@@ -158,13 +158,17 @@ it("runs exactly ten seconds after a valid five-decision plan, without inventing
     screen.getByRole("progressbar", { name: "Использованный бюджет" }),
   ).toHaveAttribute("value", "95");
   fireEvent.click(screen.getByRole("button", { name: /Запустить план/ }));
-  expect(screen.getByRole("dialog", { name: "Работы идут" })).toBeVisible();
-  expect(document.querySelector(".studio-content")).toHaveAttribute("inert");
+  expect(
+    screen.getByRole("region", { name: "Демонстрация плана" }),
+  ).toBeVisible();
+  expect(document.querySelector(".plan-dock")).toHaveAttribute("inert");
   act(() => vi.advanceTimersByTime(9999));
-  expect(screen.getByRole("dialog", { name: "Работы идут" })).toBeVisible();
+  expect(
+    screen.getByRole("region", { name: "Демонстрация плана" }),
+  ).toBeVisible();
   act(() => vi.advanceTimersByTime(1));
-  expect(screen.getByText("ПЛАН ВИЗУАЛИЗИРОВАН")).toBeVisible();
-  expect(screen.getByText(/Это визуализация работ/)).toBeVisible();
+  expect(screen.getByText("Демонстрация завершена")).toBeVisible();
+  expect(screen.getByText(/Реальные работы не запускались/)).toBeVisible();
   expect(screen.queryByText(/56[.,]54/)).not.toBeInTheDocument();
 });
 
@@ -174,13 +178,11 @@ it("allows skipping construction and editing the plan afterwards", () => {
   example();
   fireEvent.click(screen.getByRole("button", { name: /Запустить план/ }));
   fireEvent.click(screen.getByRole("button", { name: /Пропустить анимацию/ }));
-  expect(screen.getByText("ПЛАН ВИЗУАЛИЗИРОВАН")).toBeVisible();
+  expect(screen.getByText("Демонстрация завершена")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /Вернуться к городу/ }));
   fireEvent.click(screen.getByRole("button", { name: "Удалить M5" }));
   expect(screen.getByRole("button", { name: /Запустить план/ })).toBeDisabled();
-  expect(document.querySelector(".studio-content")).not.toHaveAttribute(
-    "inert",
-  );
+  expect(document.querySelector(".plan-dock")).not.toHaveAttribute("inert");
   act(() => vi.advanceTimersByTime(20000));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

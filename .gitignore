@@ -10,3 +10,5 @@ test-results/
 next-env.d.ts
 *.log
 .DS_Store
+.cache/geodata/
+artifacts/astana-*.png

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { dataset } from "@/data/dataset";
-import type { Decision, DistrictId } from "@/domain/types";
+import { geography, type MapDistrictId } from "./geography";
+import type { Decision } from "@/domain/types";
 import type { CityScene } from "./city-scene";
 
 export function CityMap({
@@ -11,13 +11,13 @@ export function CityMap({
   decisions,
   progress,
 }: {
-  selected: DistrictId | null;
-  onSelect: (id: DistrictId) => void;
+  selected: MapDistrictId | null;
+  onSelect: (id: MapDistrictId) => void;
   decisions: readonly Decision[];
   progress: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const labels = useRef(new Map<DistrictId, HTMLButtonElement>());
+  const labels = useRef(new Map<MapDistrictId, HTMLButtonElement>());
   const scene = useRef<CityScene | null>(null);
   const keyboardFocus = useRef(false);
   const latest = useRef({ selected, onSelect, decisions, progress });
@@ -76,7 +76,7 @@ export function CityMap({
     >
       <div className="map-canvas" ref={host}>
         <div className="map-label-layer">
-          {dataset.districts.map((d) => (
+          {geography.districts.map((d) => (
             <button
               key={d.id}
               ref={(node) => {
@@ -130,6 +130,13 @@ export function CityMap({
       )}
       <div className="map-tools" aria-label="Управление картой">
         <button
+          aria-label="Показать работы крупно"
+          disabled={status !== "ready"}
+          onClick={() => scene.current?.focus()}
+        >
+          ◎
+        </button>
+        <button
           aria-label="Приблизить карту"
           disabled={status !== "ready"}
           onClick={() => scene.current?.zoom(1.2)}
@@ -152,10 +159,43 @@ export function CityMap({
         </button>
       </div>
       <div className="map-caption">
-        <span>Схематичная 3D-модель · границы условные</span>
-        <span className="map-gesture-hint">
-          Робот указывает на район · перетаскивайте для поворота
-        </span>
+        <a
+          href="https://www.openstreetmap.org/copyright"
+          target="_blank"
+          rel="noreferrer"
+        >
+          © OpenStreetMap
+        </a>
+        <details className="map-source-details">
+          <summary>О карте</summary>
+          <div>
+            <p>
+              Контуры районов — OpenStreetMap, 23.09.2026. Дома — условные
+              3D-модели для наглядности. Это игровой макет, а не точная копия
+              города.
+            </p>
+            <p>
+              Границы OSM не являются кадастровыми. Соответствие всем изменениям
+              официальной редакции 2026 года не подтверждено.
+            </p>
+            <p>
+              Сценарий использует пять районов и синтетические показатели
+              организаторов. Для Сарайшыка показателей нет. Высоты зданий и
+              размеры объектов показа условные.
+            </p>
+            <p>
+              Автобусы едут по связанным дорогам OSM. Это демонстрационные
+              маршруты, не расписание общественного транспорта.
+            </p>
+            <a
+              href="https://www.gov.kz/memleket/entities/astana/documents/details/940185?lang=ru"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Состав районов — акимат Астаны ↗
+            </a>
+          </div>
+        </details>
       </div>
     </div>
   );

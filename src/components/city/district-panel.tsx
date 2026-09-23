@@ -10,6 +10,7 @@ import type {
 import { directions, formatNumber } from "../simulator/presentation";
 import { draftIssues } from "../simulator/selection-adapter";
 import { districtSummaries } from "./city-layout";
+import { districtName, type MapDistrictId } from "./geography";
 import { baselineFixture } from "../simulator/baseline-fixture";
 
 export function DistrictPanel({
@@ -18,7 +19,7 @@ export function DistrictPanel({
   onChange,
   onClose,
 }: {
-  target: DistrictId | "city";
+  target: MapDistrictId | "city";
   scenario: Scenario;
   onChange: (next: Scenario) => void;
   onClose: () => void;
@@ -38,6 +39,25 @@ export function DistrictPanel({
       (target === "city" ? m.scope === "city" : m.scope === "district") &&
       (direction === "all" || m.direction === direction),
   );
+  if (target === "sarayshyq")
+    return (
+      <aside className="district-panel" aria-label="Сарайшык">
+        <div className="district-panel-header">
+          <h2>Сарайшык</h2>
+          <button aria-label="Закрыть район" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <p>
+          Шестой район Астаны. В датасете хакатона для него нет показателей и
+          бюджета.
+        </p>
+        <p className="district-panel-footnote">
+          Контур отображён по OpenStreetMap. Выбор мер доступен для пяти районов
+          сценария.
+        </p>
+      </aside>
+    );
   return (
     <aside className="district-panel" aria-labelledby="district-panel-title">
       <div className="district-panel-header">
@@ -46,7 +66,9 @@ export function DistrictPanel({
           ×
         </button>
       </div>
-      <h2 id="district-panel-title">{district?.name ?? "Весь город"}</h2>
+      <h2 id="district-panel-title">
+        {target === "city" ? "Весь город" : districtName(target)}
+      </h2>
       <p className="district-description">
         {district
           ? districtSummaries[district.id]
@@ -123,7 +145,7 @@ export function DistrictPanel({
         </section>
       )}
       <div className="panel-catalog-heading">
-        <h3>Что меняем?</h3>
+        <h3>Решения</h3>
         <span>До двух мер одного направления</span>
       </div>
       <div

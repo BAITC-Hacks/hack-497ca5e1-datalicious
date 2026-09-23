@@ -77,7 +77,7 @@ export function createCityRobot(): CityRobot {
     positions.setX(i, positions.getX(i) * (0.76 + (0.24 * (y + 1)) / 2));
   }
   torsoGeometry.computeVertexNormals();
-  mesh(body, torsoGeometry, black, [0, 2.9, 0], [1.95, 2.15, 0.83]);
+  mesh(body, torsoGeometry, black, [0, 2.9, 0], [2.18, 2.15, 0.97]);
   ball(body, [0, 1.05, 0], [0.68, 0.8, 0.57], joint);
   mesh(body, cylinder, chrome, [0, 5.12, 0], [0.29, 0.62, 0.29]);
   mesh(body, cylinder, black, [0, 4.87, 0], [0.55, 0.17, 0.55]);
@@ -138,7 +138,7 @@ export function createCityRobot(): CityRobot {
       body,
       new THREE.PlaneGeometry(2.42, 0.76),
       label,
-      [0, 3.72, 0.824],
+      [0, 3.72, 0.965],
       [1, 1, 1],
     );
   }
@@ -147,7 +147,7 @@ export function createCityRobot(): CityRobot {
   const yAxis = new THREE.Vector3(0, 1, 0),
     zAxis = new THREE.Vector3(0, 0, 1);
   function makeArm(side: number) {
-    const shoulder = new THREE.Vector3(side * 1.72, 4.46, 0);
+    const shoulder = new THREE.Vector3(side * 1.95, 4.46, 0);
     ball(body, shoulder.toArray(), [0.55, 0.55, 0.55], joint);
     const upper = new THREE.Group();
     upper.position.copy(shoulder);
@@ -155,7 +155,7 @@ export function createCityRobot(): CityRobot {
     ball(
       upper,
       [0, upperLength * 0.47, 0],
-      [0.51, upperLength * 0.52, 0.46],
+      [0.62, upperLength * 0.52, 0.55],
       casing,
     );
     mesh(
@@ -174,7 +174,7 @@ export function createCityRobot(): CityRobot {
     ball(
       lower,
       [0, lowerLength * 0.48, 0],
-      [0.4, lowerLength * 0.48, 0.36],
+      [0.49, lowerLength * 0.48, 0.44],
       black,
     );
     for (const x of [-0.27, 0.27])
@@ -190,7 +190,7 @@ export function createCityRobot(): CityRobot {
     hand.position.y = lowerLength;
     lower.add(hand);
     ball(hand, [0, 0, 0], [0.24, 0.24, 0.24], joint);
-    ball(hand, [0, 0, 0.4], [0.37, 0.19, 0.46], black);
+    ball(hand, [0, 0, 0.4], [0.42, 0.22, 0.46], black);
     // Index points along local +Z. Its base and phalanges curl in the idle pose.
     const index = new THREE.Group();
     index.position.set(-side * 0.24, 0, 0.7);

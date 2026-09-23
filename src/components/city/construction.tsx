@@ -36,39 +36,27 @@ export function Construction({
   return (
     <section
       className="construction-card"
-      role="dialog"
-      aria-modal="true"
       aria-labelledby="construction-title"
+      role="region"
     >
-      <p className="construction-kicker">ВАШ ПЛАН ПРЕОБРАЖАЕТ ГОРОД</p>
       <div className="construction-title">
-        <h2 id="construction-title">Работы идут</h2>
-        <strong>
-          {Math.min(100, Math.round(progress * 100))}
-          <span>%</span>
-        </strong>
+        <h2 id="construction-title">Демонстрация плана</h2>
+        <span>{index + 1} / 5</span>
       </div>
-      <progress
-        aria-label="Визуализация выполнения работ"
-        max={100}
-        value={progress * 100}
-      />
       <div
         className="construction-current"
         aria-live="polite"
         aria-atomic="true"
       >
-        <span>0{index + 1} / 05</span>
         <p>
           {measure?.name}
           <small>{district?.name ?? "Весь город"}</small>
         </p>
       </div>
+      <progress aria-label="Ход демонстрации" max={5} value={progress * 5} />
       <div className="construction-bottom">
-        <span>Условная анимация · 10 секунд</span>
-        <button autoFocus onClick={onComplete}>
-          Пропустить анимацию →
-        </button>
+        <span>Показ на карте · 10 с</span>
+        <button onClick={onComplete}>Пропустить анимацию →</button>
       </div>
     </section>
   );
